@@ -58,12 +58,16 @@ class SpeedTestClient:
         """Handle the startup state - get user parameters"""
         try:
             print(f"\n{Fore.GREEN}=== Client ==={Style.RESET_ALL}")
+            server_ip = input("Enter server IP address: ")
+            udp_port = int(input("Enter server UDP port: "))
+            tcp_port = int(input("Enter server TCP port: "))
             self.file_size = int(input("Enter file size (in bytes): "))
             self.tcp_connections = int(input("Enter number of TCP connections: "))
             self.udp_connections = int(input("Enter number of UDP connections: "))
             if self.file_size <= 0 or self.tcp_connections < 0 or self.udp_connections < 0:
                 raise ValueError("Invalid input values")
-            self.state = ClientState.LOOKING_FOR_SERVER
+            self.current_server = (server_ip, udp_port, tcp_port)
+            self.state = ClientState.SPEED_TEST
             logging.info(f"{Fore.GREEN}Client started, listening for offer requests...{Style.RESET_ALL}")
         except ValueError as e:
             logging.error(f"Invalid input: {e}")
@@ -213,4 +217,3 @@ class SpeedTestClient:
 if __name__ == "__main__":
     client = SpeedTestClient()
     client.start()
-
