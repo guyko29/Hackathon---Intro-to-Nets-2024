@@ -20,6 +20,7 @@ class SpeedTestServer:
         self.tcp_port = 12345  # Port for TCP connections
         self.running = False
         self.clients = set()
+        self.ip_address = self.get_ip()
         logging.basicConfig(
             level=logging.INFO,
             format=f'{Fore.CYAN}[%(asctime)s] %(message)s{Style.RESET_ALL}',
@@ -48,6 +49,19 @@ class SpeedTestServer:
             === Server ===
             {Fore.GREEN}Server started, listening on IP address {ip_address}{Style.RESET_ALL}
         """)
+
+    def get_ip(self):
+        """Get the server's IP address"""
+        try:
+            # Try to get the non-localhost IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            # Fallback to hostname
+            return socket.gethostbyname(socket.gethostname())
 
     def _broadcast_offers(self):
         """Continuously broadcast offer messages via UDP"""
@@ -151,4 +165,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nShutting down server")
         server.running = False
-
