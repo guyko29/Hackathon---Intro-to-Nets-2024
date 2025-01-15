@@ -98,5 +98,6 @@ The application includes comprehensive error handling for:
 - Resource allocation failures
 
 ## Contributing
-Guy Korenfeld
+Guy Korenfeld 
+
 Yuval Livshits
