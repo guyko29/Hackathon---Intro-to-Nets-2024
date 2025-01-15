@@ -53,7 +53,9 @@ class SpeedTestServer:
     def get_ip(self):
         """Get the server's IP address"""
         try:
+
             # Try to get the non-localhost IP
+            # WE have done it beacuse it is a good practice to get the ip for comunication with external env
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]

@@ -149,7 +149,7 @@ class SpeedTestClient:
             last_packet_time = time.time()
             while True:
                 try:
-                    data, _ = sock.recvfrom(2048)  # size for UDP
+                    data, _ = sock.recvfrom(2048)  # size for UDP, _ because we are not interested in the adrress , just in the data
                     last_packet_time = time.time()
                     header_size = struct.calcsize('!IbQQ')
                     header = data[:header_size]
