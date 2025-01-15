@@ -4,6 +4,8 @@ import struct
 import time
 import logging
 from enum import Enum
+
+from click import style
 from colorama import Fore, Style, init
 
 init()
@@ -26,9 +28,7 @@ class SpeedTestClient:
         self.state = ClientState.STARTUP
         self.running = False
         self.current_server = None
-        self.broadcast_listen_port = 13118  # Port for listening to broadcast offers
-
-        # Configure logging
+        self.broadcast_listen_port = 13118  # Port for listening to broadcast
         logging.basicConfig(
             level=logging.INFO,
             format=f'{Fore.CYAN}[%(asctime)s] %(message)s{Style.RESET_ALL}',
@@ -42,8 +42,6 @@ class SpeedTestClient:
             try:
                 if self.state == ClientState.STARTUP:
                     self._handle_startup()
-                elif self.state == ClientState.LOOKING_FOR_SERVER:
-                    self._look_for_server()
                 elif self.state == ClientState.SPEED_TEST:
                     self._perform_speed_test()
                 elif self.state == ClientState.PROMPT_CONTINUE:
@@ -56,48 +54,26 @@ class SpeedTestClient:
 
     def _handle_startup(self):
         """Handle the startup state - get user parameters"""
-        try:
-            print(f"\n{Fore.GREEN}=== Client ==={Style.RESET_ALL}")
-            server_ip = input("Enter server IP address: ")
-            udp_port = int(input("Enter server UDP port: "))
-            tcp_port = int(input("Enter server TCP port: "))
-            self.file_size = int(input("Enter file size (in bytes): "))
-            self.tcp_connections = int(input("Enter number of TCP connections: "))
-            self.udp_connections = int(input("Enter number of UDP connections: "))
-            if self.file_size <= 0 or self.tcp_connections < 0 or self.udp_connections < 0:
-                raise ValueError("Invalid input values")
-            self.current_server = (server_ip, udp_port, tcp_port)
-            self.state = ClientState.SPEED_TEST
-            logging.info(f"{Fore.GREEN}Client started, listening for offer requests...{Style.RESET_ALL}")
-        except ValueError as e:
-            logging.error(f"Invalid input: {e}")
-            return
-
-    def _look_for_server(self):
-        """Listen for server offers"""
-        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        udp_socket.bind(('', self.broadcast_listen_port))
-        while self.state == ClientState.LOOKING_FOR_SERVER:
+        while True:
             try:
-                data, addr = udp_socket.recvfrom(1024)
-                if len(data) < 9:  # Magic cookie (4) + msg type (1) + ports (2+2)
-                    continue
-                magic_cookie, msg_type, udp_port, tcp_port = struct.unpack('!IbHH', data)
-                if magic_cookie != MAGIC_COOKIE or msg_type != OFFER_MESSAGE_TYPE:
-                    continue
-                server_ip = addr[0]
-                logging.info(f"{Fore.YELLOW}Received offer from {server_ip}{Style.RESET_ALL}")
+                print(f"\n{Fore.GREEN}=== Client ==={Style.RESET_ALL}")
+                server_ip = input("Enter server IP address: ")
+                udp_port = int(input("Enter server UDP port: "))
+                tcp_port = int(input("Enter server TCP port: "))
+                self.file_size = int(input("Enter file size (in bytes): "))
+                self.tcp_connections = int(input("Enter number of TCP connections: "))
+                self.udp_connections = int(input("Enter number of UDP connections: "))
+                if self.file_size <= 0 or self.tcp_connections < 0 or self.udp_connections < 0:
+                    raise ValueError("Value should be numeric and bigger then 0")
                 self.current_server = (server_ip, udp_port, tcp_port)
                 self.state = ClientState.SPEED_TEST
-                break
-            except struct.error:
-                # Ingore from error in udp
-                continue
-            except Exception as e:
-                logging.error(f"Error while looking for server: {e}")
-                time.sleep(1)
-        udp_socket.close()
+                logging.info(f"{Fore.GREEN}Client started, listening for offer requests...{Style.RESET_ALL}")
+                logging.info(f"{Fore.GREEN}Received offer from {server_ip}{Style.RESET_ALL}")
+                return
+            except ValueError as e:
+                logging.error(f"{Fore.RED}Invalid input: {e}\n\t\t\tTry again...{Style.RESET_ALL}")
+                time.sleep(0.1)
+
 
     def _perform_speed_test(self):
         """Perform the speed test with TCP and UDP connections"""
@@ -150,7 +126,7 @@ class SpeedTestClient:
                 f"total speed: {speed:.2f} bits/second{Style.RESET_ALL}"
             )
         except Exception as e:
-            logging.error(f"Error in TCP connection #{connection_id}: {e}")
+            logging.error(f"{Fore.RED}Error in TCP connection #{connection_id}: {e}{Style.RESET_ALL}")
         finally:
             sock.close()
 
@@ -159,10 +135,14 @@ class SpeedTestClient:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(1.0)  # Set timeout for detecting end of transfer
-            # Send request
             request = struct.pack('!IbQ', MAGIC_COOKIE, REQUEST_MESSAGE_TYPE, self.file_size)
-            start_time = time.time()
             sock.sendto(request, (server_ip, udp_port))
+            try:
+                data, _ = sock.recvfrom(2048)
+            except socket.error as e:
+                logging.error(f"{Fore.RED}Error in UDP connection #{connection_id}: {e}{Style.RESET_ALL}")
+                return
+            start_time = time.time()
             received_segments = set()
             total_segments = None
             received_bytes = 0
@@ -197,14 +177,14 @@ class SpeedTestClient:
                 f"percentage of packets received successfully: {success_rate:.1f}%{Style.RESET_ALL}"
             )
         except Exception as e:
-            logging.error(f"Error in UDP connection #{connection_id}: {e}")
+            logging.error(f"{Fore.RED}Error in UDP connection #{connection_id}: {e}{Style.RESET_ALL}")
         finally:
             sock.close()
 
     def _prompt_continue(self):
         """Ask user if they want to perform another test"""
         try:
-            choice = input(f"\n{Fore.YELLOW}Do you want to perform another test? (y/n): {Style.RESET_ALL}").lower()
+            choice = input(f"\n{Fore.YELLOW}Do you want to perform another test? (y/n): {Style.RESET_ALL}\n").lower()
             if choice == 'y':
                 self.state = ClientState.STARTUP
             else:
