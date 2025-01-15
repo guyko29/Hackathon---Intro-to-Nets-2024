@@ -31,7 +31,7 @@ class SpeedTestServer:
         """Start the server and initialize all necessary sockets"""
         self.running = True
         # Start UDP broadcast thread
-        self.broadcast_thread = threading.Thread(target=self._broadcast_offers)
+        self.broadcast_thread = threading.Thread(target=self.broadcast_offers)
         self.broadcast_thread.daemon = True
         self.broadcast_thread.start()
         # Start TCP listener
@@ -63,7 +63,7 @@ class SpeedTestServer:
             # Fallback to hostname
             return socket.gethostbyname(socket.gethostname())
 
-    def _broadcast_offers(self):
+    def broadcast_offers(self):
         """Continuously broadcast offer messages via UDP"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
