@@ -53,26 +53,55 @@ class SpeedTestClient:
                 time.sleep(1)
 
     def _handle_startup(self):
-        """Handle the startup state - get user parameters"""
+        """Handle the startup state - get server info from broadcast and user parameters"""
         while True:
             try:
                 print(f"\n{Fore.GREEN}=== Client ==={Style.RESET_ALL}")
-                server_ip = input("Enter server IP address: ")
-                udp_port = int(input("Enter server UDP port: "))
-                tcp_port = int(input("Enter server TCP port: "))
+
+                # Create UDP socket for broadcast
+                broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                broadcast_socket.bind(('', self.broadcast_listen_port))
+
+                # Wait for broadcast message
+                data, addr = broadcast_socket.recvfrom(1024)
+                server_ip = addr[0]  # Get server IP from the broadcast message
+
+                if len(data) < 7:  # Magic cookie (4) + message type (1) + ports (2)
+                    continue
+
+                # Unpack the broadcast message
+                magic_cookie, msg_type, udp_port, tcp_port = struct.unpack('!IbHH', data)
+
+                if magic_cookie != MAGIC_COOKIE or msg_type != OFFER_MESSAGE_TYPE:
+                    continue
+
+                # Clear the current line and print the received offer
+                print('\r' + ' ' * 80, end='\r')  # Clear line
+                logging.info(f"{Fore.GREEN}Received offer from {server_ip}{Style.RESET_ALL}")
+                time.sleep(0.1)  # Small delay to ensure message is visible
+
+                # Get parameters from user with clean formatting
+                print()  # Add blank line
                 self.file_size = int(input("Enter file size (in bytes): "))
                 self.tcp_connections = int(input("Enter number of TCP connections: "))
                 self.udp_connections = int(input("Enter number of UDP connections: "))
+
                 if self.file_size <= 0 or self.tcp_connections < 0 or self.udp_connections < 0:
                     raise ValueError("Value should be numeric and bigger then 0")
+
                 self.current_server = (server_ip, udp_port, tcp_port)
                 self.state = ClientState.SPEED_TEST
-                logging.info(f"{Fore.GREEN}Client started, listening for offer requests...{Style.RESET_ALL}")
-                logging.info(f"{Fore.GREEN}Received offer from {server_ip}{Style.RESET_ALL}")
                 return
+
             except ValueError as e:
                 logging.error(f"{Fore.RED}Invalid input: {e}\n\t\t\tTry again...{Style.RESET_ALL}")
                 time.sleep(0.1)
+            except Exception as e:
+                logging.error(f"Error in startup: {e}")
+                time.sleep(1)
+            finally:
+                broadcast_socket.close()
 
 
     def _perform_speed_test(self):
@@ -137,42 +166,60 @@ class SpeedTestClient:
             sock.settimeout(1.0)  # Set timeout for detecting end of transfer
             request = struct.pack('!IbQ', MAGIC_COOKIE, REQUEST_MESSAGE_TYPE, self.file_size)
             sock.sendto(request, (server_ip, udp_port))
+
             try:
                 data, _ = sock.recvfrom(2048)
             except socket.error as e:
                 logging.error(f"{Fore.RED}Error in UDP connection #{connection_id}: {e}{Style.RESET_ALL}")
                 return
+
             start_time = time.time()
+            last_packet_time = start_time
+            first_packet_time = None
             received_segments = set()
             total_segments = None
             received_bytes = 0
-            last_packet_time = time.time()
+
             while True:
                 try:
-                    data, _ = sock.recvfrom(2048)  # size for UDP, _ because we are not interested in the adrress , just in the data
-                    last_packet_time = time.time()
+                    data, _ = sock.recvfrom(2048)  # size for UDP
+                    current_time = time.time()
+                    if first_packet_time is None:
+                        first_packet_time = current_time
+                    last_packet_time = current_time
+
                     header_size = struct.calcsize('!IbQQ')
                     header = data[:header_size]
                     magic_cookie, msg_type, total_segs, current_seg = struct.unpack('!IbQQ', header)
+
                     if magic_cookie != MAGIC_COOKIE or msg_type != PAYLOAD_MESSAGE_TYPE:
                         continue
+
                     total_segments = total_segs
                     received_segments.add(current_seg)
                     received_bytes += len(data) - header_size
+
                     # Check if we received all segments
                     if total_segments and len(received_segments) == total_segments:
                         break
+
                 except socket.timeout:
                     # assume transfer is complete
                     if time.time() - last_packet_time >= 1.0:
                         break
-            end_time = time.time()
-            duration = end_time - start_time
-            speed = (received_bytes * 8) / duration  # bits per second
+
+            # Calculate actual transfer duration
+            actual_duration = last_packet_time - first_packet_time if first_packet_time else 0
+            if actual_duration > 0:
+                speed = (received_bytes * 8) / actual_duration  # bits per second
+            else:
+                speed = 0
+
             success_rate = (len(received_segments) / total_segments * 100) if total_segments else 0
+
             logging.info(
                 f"{Fore.YELLOW}UDP transfer #{connection_id} finished, "
-                f"total time: {duration:.2f} seconds, "
+                f"total time: {actual_duration:.2f} seconds, "
                 f"total speed: {speed:.2f} bits/second, "
                 f"percentage of packets received successfully: {success_rate:.1f}%{Style.RESET_ALL}"
             )
